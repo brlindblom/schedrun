@@ -1,0 +1,304 @@
+#!/bin/bash
+#
+# A wrapper for GridEngine job submission
+#
+# Written by: Brian Smith <brs@usf.edu>
+#
+
+unset PAR_MODE EXEC BATCH_MODE
+
+if [ -n "$SGERUN_HOME" ]; then
+	source $SGERUN_HOME/sgerun.conf
+	source $SGERUN_HOME/functions.conf
+else
+	echo "Please set SGERUN_HOME before running!"
+	exit 1
+fi
+
+if [ -z "$1" ]; then
+	echo "run requires at least one argument! Exiting..."
+	exit 1
+fi
+
+# Before we parse any command arguments, let's get any user-defined ones that
+# might be set in ~/.sgerunrc
+[ -f ~/.sgerunrc ] && . ~/.sgerunrc
+
+# Ok, we want to check for some standard flags and
+# configurable flags
+while [ -n "$1" ]; do
+	arg=$1
+	case "${arg%%=*}" in
+		-p|--parallel)
+			PAR_MODE=$(parse_optarg $@)
+			if [ -z "$PAR_MODE" ]; then
+				PAR_MODE=$DEFAULT_PAR
+			else
+				[[ "$arg" =~ '^.*=.*$' ]] || shift
+			fi
+			valid_optarg "parallel configuration" "$(ls $SGERUN_CONF)" parallel-${PAR_MODE}.conf
+		;;
+		-a|--array)
+			ARRAY=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			valid_optarg "array task range" $ARRAY '[0-9]+' ;;
+				
+		-n|--num-cpus) 
+			CPUS=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			valid_optarg "number of CPUs" $CPUS '[0-9]+' ;;
+
+		-b|--batch)	BATCH_MODE=true ;;
+	
+		-i|--inter)	INTER_MODE=true ;;
+
+		-c|--num-cpus-per-node)
+			CPUS_PER_NODE=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			valid_optarg "CPUs per node" $CPUS_PER_NODE '[0-9]+' ;;
+
+		-m|--memreq)
+			MEMREQ=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			valid_optarg "memory request" $MEMREQ '^[0-9]+(\.[0-9]+)*[GM]$' ;;
+
+		-v|--verbose)	VERBOSE=true ;;
+
+		-d|--debug)	DEBUG=true ;;
+
+		-D|--devel)	DEVEL=true ;;
+	
+		-f|--features)
+			FEATURES=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			valid_optarg "feature list" $FEATURES '^(.+,*)+$' ;;
+
+		-E|--excludes)
+			EXCLUDES=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			valid_optarg "exclude features" $EXCLUDES '^(.+,*)+$' ;;
+
+		-t|--time)
+			TIME=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			valid_optarg "job runtime" $TIME '^([0-9]+:)*[0-9]+$' ;;
+
+		--test)	TEST=true ;;
+
+		-q|--qname)
+			QNAME=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			valid_optarg "queue name" $QNAME '^[^\ \;\:\&\$\@\#\*\!]+$' ;;
+
+		-N|--name)
+			JNAME=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			valid_optarg "job name" $JNAME '^[^\ \;\:\&\$\@\#\*\!]+$' ;;
+
+		-M|--mailto)
+			EMAIL=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			shopt -s nocasematch
+			valid_optarg "notification e-mail address" '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}$'
+			shopt -u nocasematch ;;
+
+		-e|--environment)
+			ENVVARS=$(parse_optarg $@)
+			[[ "$arg" =~ '^.*=.*$' ]] || shift
+			valid_optarg "environment settings" $ENVVARS '^(.+=.+,*)+$' ;;
+		
+		-x|--exec)	EXEC=null ;;
+
+		-h|--help)	usage | less; exit ;;
+
+		*)	ARGS=$(module avail apps 2>&1 | egrep -o apps/$arg | sort | tail -1)
+			if which $arg &> /dev/null || [ -e $arg ]; then
+				break
+			else if [ -n "$ARGS" ]; then
+				APP_PROFILE=${ARGS//apps\//}
+				unset ARGS
+				break
+			else
+				echo "Invalid argument \"$arg\" specified or file not found! Exiting..."
+				echo "Use -h or --help for help."
+				exit 1
+			fi; fi ;;
+	esac
+	shift
+done
+
+[ "$TEST" == "true" ] && exit 0
+
+if [ -z "$JNAME" ]; then
+	JOB_HASH=$(date; echo $APP_PROFILE $USER $RANDOM $CPUS $CPUS_PER_NODE $@)
+	JOB_HASH=$(echo $JOB_HASH | md5sum)
+	if [ -n "$APP_PROFILE" ]; then
+		JNAME="${APP_PROFILE//\//_}-${USER}-${JOB_HASH:0:7}"
+	else
+		JNAME="${USER}-${JOB_HASH:0:7}"
+	fi
+fi
+
+# first, let's source our definitions from the default configuration
+[ -f $SGERUN_CONF/default.conf ] && . $SGERUN_CONF/default.conf
+
+# Application profiles
+[ -f $SGERUN_CONF/apps.conf ] && . $SGERUN_CONF/apps.conf
+
+# let's see if the defined module is correct
+if [ -n "$APP_PROFILE" ]; then
+	module add apps/$APP_PROFILE
+fi
+
+# Some post processing
+if [ -n "$PAR_MODE" -a -z "$CPUS" ]; then
+	echo "You must specify the number of CPUs you'll be using if you wish to use parallelism! Exiting..."
+	echo "Use -h or --help for help."
+	exit 1
+fi
+
+if [ -z "$PAR_MODE" -a -n "$CPUS" ]; then
+	export PAR_MODE=$DEFAULT_PAR
+fi
+
+if [ -z "$CPUS" -a -n "$CPUS_PER_NODE" ]; then
+	echo "Specifying CPUS_PER_NODE without specifying CPUS doesn't work! Exiting..."
+	echo "Use -h or --help for help."
+	exit 1
+fi
+
+# Let's source our parallel environment settings now (only the environment vars)
+[ -n "$PAR_MODE" ] && . $SGERUN_CONF/parallel-${PAR_MODE}.conf
+
+# build our commandline
+if [ "$BATCH_MODE" == "true" ] && [ "$INTER_MODE" != "true" ]; then
+	JOB="qsub -cwd -N $JNAME -j y -o output.${JNAME}_\$JOB_ID"
+else
+	JOB="qrsh -N $JNAME -j y -o /dev/null"
+fi
+
+# Process parallel arguments
+[ -n "$PAR_MODE" ] && JOB="$JOB -pe $PE"
+if [ -n "$CPUS_PER_NODE" ]; then 
+	JOB="$JOB:$CPUS_PER_NODE $CPUS"
+else
+	JOB="$JOB $CPUS"
+fi
+
+# Environment variables?
+[ -n "$DEBUG" ] && ENVVARS="$ENVVARS,DEBUG=true"
+if [ -n "$DISPLAY" ]; then 
+	if [[ "$DISPLAY" =~ '^.+\:[0-9]+\.[0-9]+$' ]]; then
+		ENVVARS="$ENVVARS,DISPLAY=$DISPLAY"
+	else
+		ENVVARS="$ENVVARS,DISPLAY=$HOSTNAME$DISPLAY"
+	fi
+fi
+
+if [ -n "$MEMREQ" ]; then
+	[ -z "$MEMBASE" ] && MEMBASE=$DEFMEMBASE
+	ENVVARS="$ENVVARS,MEMREQ=$MEMREQ"
+	[ -z $CPUS ] && CPUS=1
+	MEMPSLOT="$(echo "scale=2; ${MEMREQ//[MG]/}/$CPUS;" | bc)${MEMREQ//[0-9\.]/}"
+fi
+
+ENVVARS=$(echo $ENVVARS | sed 's/^,//g;s/,$//g')
+
+[ -n "$ENVVARS" ] && JOB="$JOB -v $ENVVARS"
+
+# process resource requests
+[ -n "$TIME" ] && REQUEST="$REQUEST h_rt=$TIME"
+[ -n "$MEMREQ" ] && if [ -n "$PE_SINGLE_HOST" ]; then
+	REQUEST="$REQUEST h_vmem=${MEMREQ} h_stack=${DEFSTACK} mem_request=${MEMPSLOT}"
+else
+	REQUEST="$REQUEST h_vmem=${MEMPSLOT} h_stack=${DEFSTACK} mem_request=${MEMPSLOT}"
+fi
+	
+[ -n "$DEVEL" ] && REQUEST="$REQUEST t_devel=true"
+[ -n "$FEATURES" ] && REQUEST="$REQUEST $(for f in $FEATURES; do echo -ne "$f=true "; done)"
+[ -n "$EXCLUDES" ] && REQUEST="$REQUEST $(for E in $EXCLUDES; do echo -ne "$E=false "; done)"
+[ -n "$EXTRA" ] && REQUEST="$REQUEST $EXTRA"
+[ -n "$QNAME" ] && REQUEST="$REQUEST q=$QNAME"
+[ -z "$TIME" ] && [ "$BATCH_MODE" != "true" ] && REQUEST="$REQUEST h_rt=INFINITY"
+[ -n "$PAR_RESOURCES" ] && REQUEST="$REQUEST $PAR_RESOURCES"
+
+RES_REQ=$(echo $REQUEST | sed 's/^[ ]+//g;s/[ ]+$//g')
+
+[ -n "$RES_REQ" ] && JOB="$JOB -l ${RES_REQ// /,}"
+
+[ -n "$ARRAY" ] && JOB="$JOB -t $ARRAY"
+
+[ -n "$EMAIL" ] && JOB="$JOB -m bea -M $EMAIL"
+
+if [ "$VERBOSE" == "true" ]; then
+	echo "======== Options ========="
+	echo "-- PAR_MODE:      $PAR_MODE"
+	echo "-- CPUS:          $CPUS"
+	echo "-- CPUS_PER_NODE: $CPUS_PER_NODE"
+	echo "-- BATCH_MODE:    $BATCH_MODE"
+	echo "-- VERBOSE:       $VERBOSE"
+	echo "-- TIME:          $TIME"
+	echo "-- MEMREQ:        $MEMREQ"
+	echo "-- DEBUG:         $DEBUG"
+	echo "-- DEVEL:         $DEVEL"
+	echo "-- ARRAY:         $ARRAY"
+	echo "-- ENVVARS:       $ENVVARS"
+	echo "-- COMMAND:       $@"
+	echo "=========================="
+fi
+
+# if we're batch, lets create a batch script to submit
+[ -z "$INTER_MODE" ] && INTER_MODE=false
+
+if [ "$BATCH_MODE" == "true" ] && [ "$INTER_MODE" == "false" ]; then
+	echo "#!/bin/bash" > /tmp/.run.$USER.$$
+	echo "# Submit script auto-generated by 'run' on $(date)" >> /tmp/.run.$USER.$$
+	echo >> /tmp/.run.$USER.$$
+
+	# put parallel function code in
+	if [ -n "$PAR_MODE" ]; then
+		declare -f parallel_exec >> /tmp/.run.$USER.$$
+		echo >> /tmp/.run.$USER.$$
+		if [ -z "$APP_PROFILE" ]; then
+			echo -ne "parallel_exec " >> /tmp/.run.$USER.$$
+		fi
+	fi
+
+	if [ -n "$EXEC" ]; then
+		echo "module purge" >> /tmp/.run.$USER.$$
+		echo -ne "module add apps/$APP_PROFILE\n" >> /tmp/.run.$USER.$$
+		echo "$EXEC" >> /tmp/.run.$USER.$$
+	else
+		echo $@ >> /tmp/.run.$USER.$$	
+	fi
+
+	JOB="$JOB -S /bin/bash /tmp/.run.$USER.$$"
+
+	[ "$VERBOSE" == "true" ] && cat /tmp/.run.$USER.$$
+	[ "$VERBOSE" == "true" ] && echo "=========================="
+	[ "$VERBOSE" == "true" ] && echo $JOB
+	$JOB
+	rm -f /tmp/.run.$USER.$$
+else
+# otherwise, run it interactively
+	if [ -n "$PAR_MODE" ]; then
+		PWD=`pwd`
+		if [ -n "$EXEC" ]; then
+			JOB="$JOB bash -c \"source /etc/bashrc; source $SGERUN_CONF/parallel-${PAR_MODE}.conf; source $SGERUN_HOME/pesetup.conf; cd $PWD; module add apps/$APP_PROFILE; INTER_MODE=$INTER_MODE $EXEC\""
+		else
+			JOB="$JOB bash -c \"source /etc/bashrc; source $SGERUN_CONF/parallel-${PAR_MODE}.conf; source $SGERUN_HOME/pesetup.conf; cd $PWD; parallel_exec $@\""
+		fi
+		[ "$VERBOSE" == "true" ] && echo $JOB
+	else
+		if [ -n "$EXEC" ]; then
+			JOB="$JOB bash -c \"source /etc/bashrc; module add apps/$APP_PROFILE; INTER_MODE=$INTER_MODE $EXEC\""
+		else	
+			JOB="$JOB bash -c \"source /etc/bashrc; $@\""
+		fi
+		[ "$VERBOSE" == "true" ] && echo $JOB
+	fi
+
+	exec $JOB
+fi
+
+exit

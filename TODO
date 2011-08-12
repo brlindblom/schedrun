@@ -1,0 +1,9 @@
+09/24/2009
+ * Add job name support - DONE
+ * Finish profile definition - DONE
+ * Build test profile - DONE
+ * Create generic PEs - IN PROGRESS
+ * Build OpenMPI configuration - DONE
+ * Test against actual run - DONE
+ * SSH integration with SGE - IN PROGRESS
+ * Test graphical interactive applications - IN PROGRESS
