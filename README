@@ -1,0 +1,112 @@
+schedrun - RUN v0.1
+
+  shedrun [OPTIONS] [[COMMAND] [ARGUMENTS]]
+
+  where [[COMMAND] [ARGUMENTS]] signify the command you wish to execute.  If 
+  you are using pipes or redirects, the command must be enclosed in quotes.  
+  You do not specify these if you are also specifying an Application Profile 
+  (described below).
+
+  The following are command options to modify the behavior of 'run'.  By 
+  default, 'schedrun' will execute your application interactively with no parallel 
+  features enabled.  More often than not, this is not what you want.  Why would 
+  this be the default then?  Because you need to configure this tool for your
+  environment first!
+
+  -p [parallel_configuration] | --parallel[=<parallel_configuration>]
+      By itself, this option enables the default Parallel Configuration,
+      "$DEFAULT_PAR".  This option is required to run parallel jobs. 
+
+  -n <int> | --num-cpus=<int>
+      Specify the number of CPUs required for your parallel job.  Required if 
+      specifying -p.
+
+  -c <int> | --num-cpus-per-node=<int>
+      Specify the number of CPUs to use per node.  Useful for MPI/OpenMP 
+      applications.
+
+  -t <time_val> | --time=<time_val>
+      Specify the time required to execute your job.  Default for BATCH jobs 
+      is 10 minutes.  <time_val> takes the format <HH...>HH:MM:SS
+
+  -m <memory> | --memreq=<memory>
+      Specify the total amount of memory that this job will use.
+      <memory> takes the form of e.g. 16G, 0.2G, 256M, etc.
+
+  -a <array_spec> | --array=<array_spec>
+      Specify that this job is an array job (which spawns multiple copies of 
+      the same job).  Within each copy of the job, the variable SGE_TASK_ID is 
+      defined as a value within the range defined by <array_spec>.   
+      <array_spec> takes the form of n-m, where n is a positive integer
+      denoting the first task and m is a positive integer denoting the last 
+      task.
+
+  -f <features> | --feature=<features>
+      A comma-separated list of features that should be requested for this job.
+      Consult system documentation for list of features and their meaning.
+
+  -M <email_addr> | --mail=<email_addr>
+      Send job status updates to the email address defined by <email_addr>
+
+  -N <name> | --name=<name>
+      Assign a name for this job.  If this option is not specified, one will be 
+      generated.
+
+  -e <env_vars> | --environment=<env_vars>
+      A comma-separated list of environment variables and assigned values that 
+      will be set during job execution.
+
+  -h | --help     - Display this help page.
+
+  -b | --batch    - This job should run in batch-mode (in the background).
+
+  -i | --inter    - This job should run in interactive-mode (in the foreground).
+                    NOTE: If no resources are available, job will not start.
+                    This mode is the DEFAULT
+
+  -l | --list     - List available application profiles.
+
+  -d | --debug    - Enable extra output during job run to diagnose problems.
+
+  -D | --devel    - Specify that this job should run in the development queue.
+                    30 minute limit applies.
+
+  -v | --verbose  - See what this script is doing.
+
+ Example Usage:
+
+  1. Run "Matlab" in an interactive session:
+     
+     [user@host ~]$ schedrun matlab
+
+     and run Matlab with more available memory:
+
+     [user@host ~]$ schedrun -m 2G matlab
+
+  2. Run a parallel application with 16 processors that needs 10 hours to 
+     complete.  Notify you when complete and submit to the queue:
+
+     [user@host ~]$ schedrun -b -p -n 16 -t 10:00:00 -m myemail@mydomain.com myapp
+
+  3. Run an application from a profile that includes parallel support. In
+     this case, we choose ANSYS 12 defined by the module 'apps/ansys/12':
+     We see here that the command argument can be a valid executable OR 
+     an 'apps' module:
+
+     [user@host ~]$ schedrun -n 4 ansys/12
+
+  4. Run an application from a profile that requires environment options and 
+     four processors per node:
+
+     [user@host ~]$ schedrun -n 16 -c 4 -e INPUT_DB=mydb.gdb gromacs/4.0.5
+
+  5. Run an application in parallel that is tuned for a specific processor
+     feature:
+
+     [user@host ~]$ schedrun -p -n 32 -f sse4e -t 4:00:00 myapp
+
+ Please log any issues at the project's Github page, 
+ http://github.com/brichsmith/schedrun.  
+
+ If reporting an issue with a job, please re-run with the -d flag and 
+ attach the job's output.

@@ -1,17 +1,31 @@
 #!/bin/bash
 #
-# A wrapper for GridEngine job submission
+# A wrapper for job submission
 #
 # Written by: Brian Smith <brs@usf.edu>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
 unset PAR_MODE EXEC BATCH_MODE
 
-if [ -n "$SGERUN_HOME" ]; then
-	source $SGERUN_HOME/sgerun.conf
-	source $SGERUN_HOME/functions.conf
+if [ -n "$SCHEDRUN_HOME" ]; then
+	source $SCHEDRUN_HOME/schedrun.conf
+	source $SCHEDRUN_HOME/functions.conf
 else
-	echo "Please set SGERUN_HOME before running!"
+	echo "Please set SCHEDRUN_HOME before running!"
 	exit 1
 fi
 
@@ -21,8 +35,8 @@ if [ -z "$1" ]; then
 fi
 
 # Before we parse any command arguments, let's get any user-defined ones that
-# might be set in ~/.sgerunrc
-[ -f ~/.sgerunrc ] && . ~/.sgerunrc
+# might be set in ~/.schedrunrc
+[ -f ~/.schedrunrc ] && . ~/.schedrunrc
 
 # Ok, we want to check for some standard flags and
 # configurable flags
@@ -36,7 +50,7 @@ while [ -n "$1" ]; do
 			else
 				[[ "$arg" =~ '^.*=.*$' ]] || shift
 			fi
-			valid_optarg "parallel configuration" "$(ls $SGERUN_CONF)" parallel-${PAR_MODE}.conf
+			valid_optarg "parallel configuration" "$(ls $SCHEDRUN_CONF)" parallel-${PAR_MODE}.conf
 		;;
 		-a|--array)
 			ARRAY=$(parse_optarg $@)
@@ -140,10 +154,10 @@ if [ -z "$JNAME" ]; then
 fi
 
 # first, let's source our definitions from the default configuration
-[ -f $SGERUN_CONF/default.conf ] && . $SGERUN_CONF/default.conf
+[ -f $SCHEDRUN_CONF/default.conf ] && . $SCHEDRUN_CONF/default.conf
 
 # Application profiles
-[ -f $SGERUN_CONF/apps.conf ] && . $SGERUN_CONF/apps.conf
+[ -f $SCHEDRUN_CONF/apps.conf ] && . $SCHEDRUN_CONF/apps.conf
 
 # let's see if the defined module is correct
 if [ -n "$APP_PROFILE" ]; then
@@ -168,7 +182,7 @@ if [ -z "$CPUS" -a -n "$CPUS_PER_NODE" ]; then
 fi
 
 # Let's source our parallel environment settings now (only the environment vars)
-[ -n "$PAR_MODE" ] && . $SGERUN_CONF/parallel-${PAR_MODE}.conf
+[ -n "$PAR_MODE" ] && . $SCHEDRUN_CONF/parallel-${PAR_MODE}.conf
 
 # build our commandline
 if [ "$BATCH_MODE" == "true" ] && [ "$INTER_MODE" != "true" ]; then
@@ -284,9 +298,9 @@ else
 	if [ -n "$PAR_MODE" ]; then
 		PWD=`pwd`
 		if [ -n "$EXEC" ]; then
-			JOB="$JOB bash -c \"source /etc/bashrc; source $SGERUN_CONF/parallel-${PAR_MODE}.conf; source $SGERUN_HOME/pesetup.conf; cd $PWD; module add apps/$APP_PROFILE; INTER_MODE=$INTER_MODE $EXEC\""
+			JOB="$JOB bash -c \"source /etc/bashrc; source $SCHEDRUN_CONF/parallel-${PAR_MODE}.conf; source $SCHEDRUN_HOME/ge_pe_setup.conf; cd $PWD; module add apps/$APP_PROFILE; INTER_MODE=$INTER_MODE $EXEC\""
 		else
-			JOB="$JOB bash -c \"source /etc/bashrc; source $SGERUN_CONF/parallel-${PAR_MODE}.conf; source $SGERUN_HOME/pesetup.conf; cd $PWD; parallel_exec $@\""
+			JOB="$JOB bash -c \"source /etc/bashrc; source $SCHEDRUN_CONF/parallel-${PAR_MODE}.conf; source $SCHEDRUN_HOME/ge_pe_setup.conf; cd $PWD; parallel_exec $@\""
 		fi
 		[ "$VERBOSE" == "true" ] && echo $JOB
 	else

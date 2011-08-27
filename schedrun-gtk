@@ -1,0 +1,63 @@
+#!/bin/bash
+#
+# Simple script for doing job submission dialogs with Zenity
+#
+# Written by: Brian Smith <brs@usf.edu>, Copyright 2011
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#
+
+SCHEDRUN_HOME=/opt/admin/schedrun-0.1
+[ -f "$SCHEDRUN_HOME/schedrun.conf" ] && . $SCHEDRUN_HOME/schedrun.conf
+[ -f "$SCHEDRUN_HOME/functions.inc" ] && . $SCHEDRUN_HOME/functions.inc
+
+app=$1
+module add apps/$app
+
+if zprompt $app; then
+	if [[ "$@" =~ "directory" ]]; then
+		dir=$(zdir)
+		[ -z "$dir" ] && exit
+	fi
+	if [[ "$@" =~ "cpus" ]]; then
+		procs=$(zprocs)
+		[ -z "$procs" ] && exit
+		args="$args -n $procs"
+	fi
+	if [[ "$@" =~ "memory" ]]; then
+		mem=$(zmem)
+		[ -z "$mem" ] && exit
+		args="$args -m $mem"
+	fi
+	if [[ "$@" =~ "runtime" ]]; then
+		rt=$(zrt)
+		[ -z "$rt" ] && exit
+		args="$args -t $rt"
+	fi
+	if [[ "$@" =~ "env" ]]; then
+		environ=$(echo $@ | egrep -o "env=[^ ]*")
+		args="$args -e ${environ//env=/}"
+	fi
+
+	[ -n "$dir" ] && cd $dir
+	output=$(schedrun -v -i $args $app 2>&1)
+	if [ $? -eq 0 ]; then
+		! [[ "$@" =~ "erroronly" ]] && echo "$output" | zenity --width=640 --height=480 --title="Process Output" --text-info
+	else
+		echo "$output" | zenity --width=640 --height=480 --title="Process Output" --text-info
+	fi
+else
+	exit
+fi

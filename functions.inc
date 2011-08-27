@@ -1,3 +1,21 @@
+#
+# Needed functions for schedrun
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#
+
 function module () {
 	eval `/usr/bin/modulecmd bash $*`
 }
@@ -7,7 +25,7 @@ function parse_optarg () {
 		echo ${1##*=}
 	else
 		shift
-		if ! $SGERUN_HOME/run --test $1 &> /dev/null; then
+		if ! $SCHEDRUN_HOME/run --test $1 &> /dev/null; then
 			echo $1
 		fi
 	fi
@@ -23,11 +41,11 @@ function valid_optarg () {
 
 function usage (){
 	cat << EOF
-GridEngine Execution Program - RUN v0.1
+HPC Job Execution Program - schedrun v0.1
 
 Use arrow keys to navigate, 'q' to quit.
 
-  run [OPTIONS] [[COMMAND] [ARGUMENTS]]
+  schedrun [OPTIONS] [[COMMAND] [ARGUMENTS]]
 
   where [[COMMAND] [ARGUMENTS]] signify the command you wish to execute.  If 
   you are using pipes or redirects, the command must be enclosed in quotes.  
@@ -35,7 +53,7 @@ Use arrow keys to navigate, 'q' to quit.
   (described below).
 
   The following are command options to modify the behavior of 'run'.  By 
-  default, 'run' will execute your application interactively with no parallel 
+  default, 'schedrun' will execute your application interactively with no parallel 
   features enabled.  More often than not, this is not what you want.
 
   -p [parallel_configuration] | --parallel[=<parallel_configuration>]
@@ -105,36 +123,92 @@ $(for p in $PAR_LIST; do echo "      * $p"; done)
 
   1. Run "Matlab" in an interactive session:
      
-     [user@host ~]$ run matlab
+     [user@host ~]$ schedrun matlab
 
      and run Matlab with more available memory:
 
-     [user@host ~]$ run -m 2G matlab
+     [user@host ~]$ schedrun -m 2G matlab
 
   2. Run a parallel application with 16 processors that needs 10 hours to 
      complete.  Notify you when complete and submit to the queue:
 
-     [user@host ~]$ run -b -p -n 16 -t 10:00:00 -m myemail@mydomain.com myapp
+     [user@host ~]$ schedrun -b -p -n 16 -t 10:00:00 -m myemail@mydomain.com myapp
 
   3. Run an application from a profile that includes parallel support. In
      this case, we choose ANSYS 12 defined by the module 'apps/ansys/12':
      We see here that the command argument can be a valid executable OR 
      an 'apps' module:
 
-     [user@host ~]$ run -n 4 ansys/12
+     [user@host ~]$ schedrun -n 4 ansys/12
 
   4. Run an application from a profile that requires environment options and 
      four processors per node:
 
-     [user@host ~]$ run -n 16 -c 4 -e INPUT_DB=mydb.gdb gromacs/4.0.5
+     [user@host ~]$ schedrun -n 16 -c 4 -e INPUT_DB=mydb.gdb gromacs/4.0.5
 
   5. Run an application in parallel that is tuned for a specific processor
      feature:
 
-     [user@host ~]$ run -p -n 32 -f sse4e -t 4:00:00 myapp
+     [user@host ~]$ schedrun -p -n 32 -f sse4e -t 4:00:00 myapp
 
- Please report any issues to help@usf.edu.  If reporting an issue with a batch 
- job, please re-run with the -d flag and attach the job's output.
+ Please report any issues to out Github issue tracker at 
+ http://github.com/brichsmith/schedrun.  If reporting an issue with a job, please 
+ re-run with the -d flag and attach the job's output.
 
 EOF
+}
+
+# Zenity GTK functions
+
+function zdir(){
+        zenity --title="Select a directory..." --file-selection --directory
+}
+
+function zfile(){
+	zenity --title="Select a file..." --file-selection
+}
+
+function zprompt(){
+        zenity --title="Start a session?" --question --text "This will start a session for \"$1\".  Continue?"
+}
+
+function zprocs(){
+	var=""
+	while ! [[ "$var" =~ "^[1-9]{1}[0-9]*$" ]]; do
+        	var=$(zenity --title="Processors" --entry --entry-text="1" --text "Specify the number of processors")
+		[ -z "$var" ] && exit
+	done
+	echo $var
+}
+
+function zmem(){
+        if [ -n "$MEMBASE" ]; then
+                MEM=$MEMBASE
+        else
+                MEM=$DEFMEMBASE
+        fi
+	var=""
+	while ! [[ $var =~ [0-9]+(\.[0-9])*(M|G) ]]; do
+        	var=$(zenity --title="Memory" --entry --entry-text="$MEM" --text "Specify the memory required (e.g. 2.3G or 512M)")
+		[ -z "$var" ] && exit
+	done
+	echo $var
+}
+
+function zrt(){
+	var=""
+	while ! [[ $var =~ ^[0-9]+:[0-9]+:[0-9]+ ]]; do
+        	var=$(zenity --title="Run-time" --entry --entry-text="00:30:00" --text "Specify the required runtime")
+		[ -z "$var" ] && exit
+	done
+	echo $var
+}
+
+function zemail(){
+	var=""
+	while ! [[ $var =~ ^([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\]?)$ ]]; do
+        	var=$(zenity --"Notification E-Mail" --entry --entry-text="$USER@mail.usf.edu" --text "Specify your e-mail address for notifications")
+		[ -z "$var" ] && exit
+	done
+	echo $var
 }
