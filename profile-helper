@@ -1,0 +1,42 @@
+#!/bin/bash
+
+JOBID=$1
+EXCLUDE="(bash|qrsh|pdsh|ssh)"
+
+counter=0
+startTime=$(date +"%s")
+
+if [ -z "$JOBID" ]; then
+	echo "Need a jobid as an argument!"
+	exit 1
+fi
+
+echo ------------ `date` ----------------
+while true; do
+
+    if [ $counter -eq 4 ]; then
+        echo ------------ `date` ----------------
+        curTime=$(date +"%s")
+        echo --- Seconds since start $((curTime-startTime)) ---
+        counter=0
+    fi
+    unset pids
+    for pid in $(ls /proc | egrep '[0-9]+'); do
+	    [ -f "/proc/$pid/environ" ] || continue
+        grep -q "JOB_ID=$JOBID" /proc/$pid/environ && pids="$pids,$pid"
+    done 
+
+    pids=${pids//\,/}
+
+    if [ -z "$pids" ]; then
+        echo "No PIDs of job $JOBID live here."
+    fi
+
+    top -n 1 -b -M -p $pids | egrep -v "$EXCLUDE" | egrep '^[ ]*[0-9]+[ ]+[a-z0-9]+' | 
+        awk '{ printf "%8s %8s %8s %8s %6s %6s %12s  %s\n", $1, $5, $6, $7, $9, $10, $11, $12 }'
+
+    echo ------ 
+
+    counter=$((counter+1))
+    sleep 1
+done

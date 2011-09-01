@@ -39,6 +39,85 @@ function valid_optarg () {
 	fi
 }
 
+# Debugging and profiling information
+function extJobInfoLoop () {
+    debugDir=$(pwd)/extDebugInfo.$JOB_ID
+    profileInfo=$debugDir/jobProfileInfo
+    envInfo=$debugDir/jobEnvInfo
+    dmesgInfo=$debugDir/dmesgInfo
+    ibInfo=$debugDir/ibInfo
+    pidName=$1
+
+    mkdir $debugDir
+
+    cat $PE_HOSTFILE >> $envInfo
+
+    if [ -n "$PE_HOSTFILE" ]; then
+        hostList=$(awk '{ print $1 }' $PE_HOSTFILE | sort | uniq)
+        hostList=$(echo $hostList | sed 's/\ /,/g')
+        echo "Hostlist: $hostList"
+    fi
+
+    if groups | tr " " "\n" | grep -q '^admin$'; then
+        PDSH_SSH_ARGS_APPEND="-i ${HOME}/.ssh/nopw"
+    fi
+
+    echo "Debugging enabled to $debugDir"
+    echo
+    echo "Files written: "
+
+    echo $envInfo
+    echo $dmesgInfo
+    echo $ibInfo
+    echo $profileInfo
+
+    # Get basics
+    cat $0 >> $envInfo
+    echo; echo >> $envInfo
+    env >> $envInfo
+    echo; echo >> $envInfo
+    ulimit -a >> $envInfo
+    echo; echo >> $envInfo
+
+    if [ -n "$hostList" ]; then
+        pdsh -w $hostList -f 1 mount >> $envInfo
+        echo; echo >> $envInfo
+        pdsh -w $hostList -f 1 /sbin/ifconfig >> $envInfo
+        echo; echo >> $envInfo
+        pdsh -w $hostList -f 1 netstat -rn >> $envInfo
+        pdsh -w $hostList -f 1 dmesg >> $dmesgInfo
+        pdsh -w $hostList -f 1 /usr/sbin/ibstat >> $ibInfo
+    else
+        mount >> $envInfo
+        echo >> $envInfo
+        echo >> $envInfo
+        /sbin/ifconfig -a >> $envInfo
+        echo >> $envInfo
+        echo >> $envInfo
+        netstat -rn >> $envInfo
+        dmesg >> $dmesgInfo
+        /usr/sbin/ibstat >> $ibInfo
+    fi
+
+    if [ -n "$PE_HOSTFILE" ]; then
+        cmd="pdsh -w $hostList sudo $SCHEDRUN_HOME/profile-helper $JOB_ID"
+    else
+        cmd="sudo $SCHEDRUN_HOME/profile-helper $JOB_ID"
+    fi
+
+    if [ -n "$pidName" ]; then
+        $cmd | grep $pidName >> $profileInfo
+    else
+        $cmd >> $profileInfo
+    fi 
+}
+
+# collect debug and profile information and place in
+# DEBUG_DATA_DIR for sysadmin review
+function extJobInfoCleanup () {
+   kill $(jobs -rl | awk '/extJobInfoLoop/ { print $2 }')
+}
+
 function usage (){
 	cat << EOF
 HPC Job Execution Program - schedrun v0.1
