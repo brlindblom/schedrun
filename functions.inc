@@ -100,9 +100,11 @@ function extJobInfoLoop () {
     fi
 
     if [ -n "$PE_HOSTFILE" ]; then
-        cmd="pdsh -w $hostList sudo $SCHEDRUN_HOME/profile-helper $JOB_ID"
+        #cmd="pdsh -w $hostList sudo -n $SCHEDRUN_HOME/profile-helper $JOB_ID"
+        cmd="pdsh -w $hostList sudo /opt/admin/scripts/get-top-of-jid $JOB_ID"
     else
-        cmd="sudo $SCHEDRUN_HOME/profile-helper $JOB_ID"
+        #cmd="sudo $SCHEDRUN_HOME/profile-helper $JOB_ID"
+        cmd="sudo /opt/admin/scripts/get-top-of-jid $JOB_ID"
     fi
 
     if [ -n "$pidName" ]; then
